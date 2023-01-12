@@ -1,0 +1,58 @@
+name: goaxfrbackend CI/CD
+
+on:
+  push:
+    branches: [ "main" ]
+        
+jobs:
+  build:
+    name: Build and Push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v2
+      
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+      
+      - name: Login to Dockr.it
+        uses: docker/login-action@v2
+        with:
+          registry: dockr.it
+          username: ${{ secrets.DOCKR_USER }}
+          password: ${{ secrets.DOCKR_PASS }}
+      
+      - name: Build and push
+        uses: docker/build-push-action@v3
+        with:
+          push: true
+          tags: | 
+            dockr.it/goaxfrbackend:k8s
+            dockr.it/goaxfrbackend:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+        
+  deploy:
+    name: Deploy
+    if: github.ref == 'refs/heads/main'
+    needs: [ build ]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set the Kubernetes context
+        uses: azure/k8s-set-context@v2
+        with:
+          method: service-account
+          k8s-url: https://k8s-master-01.srv.stenstromen.se:6443/
+          k8s-secret: ${{ secrets.KUBERNETES_SECRET }}
+
+      - name: Checkout source code
+        uses: actions/checkout@v3
+
+      - name: Deploy to the Kubernetes cluster
+        uses: azure/k8s-deploy@v1
+        with:
+          namespace: default
+          manifests: |
+            kubernetes/deployment.yaml
+          images: |
+            dockr.it/goaxfrbackend:${{ github.sha }}

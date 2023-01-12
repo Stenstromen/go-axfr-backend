@@ -1,0 +1,68 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: axfr-backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: axfr-backend
+  template:
+    metadata:
+      labels:
+        app: axfr-backend
+    spec:
+      containers:
+        - name: axfr
+          image: dockr.it/goaxfrbackend:k8s
+          imagePullPolicy: Always
+          env:
+          - name: MYSQL_HOSTNAME
+            value: mariadb-service
+          - name: MYSQL_SE_DATABASE
+            value: sediff
+          - name: MYSQL_SE_USERNAME
+            value: sediff
+          - name: MYSQL_SE_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: axfrsemysqlpassword 
+                key: password
+          - name: MYSQL_SEDUMP_DATABASE
+            value: sedump
+          - name: MYSQL_SEDUMP_USERNAME
+            value: sedump
+          - name: MYSQL_SEDUMP_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: axfrsedumpmysqlpassword 
+                key: password
+          - name: MYSQL_NU_DATABASE
+            value: nudiff
+          - name: MYSQL_NU_USERNAME
+            value: nudiff
+          - name: MYSQL_NU_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: axfrnumysqlpassword 
+                key: password
+          - name: MYSQL_NUDUMP_DATABASE
+            value: nudump
+          - name: MYSQL_NUDUMP_USERNAME
+            value: nudump
+          - name: MYSQL_NUDUMP_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: axfrnudumpmysqlpassword 
+                key: password
+          - name: AUTHHEADER_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: axfrbackendauthheaderpassword
+                key: password
+          - name: CORS_ORIGIN
+            value: https://axfr.se
+          ports:
+            - containerPort: 8080
+      imagePullSecrets:
+        - name: dockrit
