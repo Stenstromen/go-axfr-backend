@@ -68,5 +68,19 @@ spec:
             value: https://axfr.se
           ports:
             - containerPort: 8080
+          readinessProbe:
+          httpGet:
+            scheme: HTTP
+            path: /
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          livenessProbe:
+          httpGet:
+            scheme: HTTP
+            path: /
+            port: 8080
+          initialDelaySeconds: 15
+          periodSeconds: 20
       imagePullSecrets:
         - name: dockrit
