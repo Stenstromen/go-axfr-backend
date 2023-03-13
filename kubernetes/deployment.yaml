@@ -12,6 +12,10 @@ spec:
       labels:
         app: axfr-backend
     spec:
+      initContainers:
+        - name: init-wait
+          image: alpine:3.17
+          command: ["sh", "-c", "for i in $(seq 1 300); do nc -zvw1 mariadb-service 3306 && exit 0 || sleep 3; done; exit 1"]
       containers:
         - name: axfr
           image: dockr.it/goaxfrbackend:k8s
