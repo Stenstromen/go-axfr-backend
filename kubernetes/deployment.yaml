@@ -12,6 +12,7 @@ spec:
       labels:
         app: axfr-backend
     spec:
+      automountServiceAccountToken: false
       initContainers:
         - name: init-wait
           image: alpine:3.17
