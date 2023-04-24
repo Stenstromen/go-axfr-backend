@@ -60,6 +60,15 @@ spec:
               secretKeyRef:
                 name: axfrnudumpmysqlpassword 
                 key: password
+          - name: MYSQL_CHDUMP_DATABASE
+            value: chdump
+          - name: MYSQL_CHDUMP_USERNAME
+            value: chdump
+          - name: MYSQL_CHDUMP_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: axfrchdumpmysqlpassword 
+                key: password
           - name: AUTHHEADER_PASSWORD
             valueFrom:
               secretKeyRef:
