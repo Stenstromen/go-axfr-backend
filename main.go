@@ -177,6 +177,9 @@ func domainSearch(w http.ResponseWriter, r *http.Request, ps httprouter.Params) 
 	case "nu":
 		result := searchDomain(os.Getenv("MYSQL_NUDUMP_DATABASE"), os.Getenv("MYSQL_NUDUMP_USERNAME"), os.Getenv("MYSQL_NUDUMP_PASSWORD"), query)
 		w.Write(result)
+	case "ch":
+		result := searchDomain(os.Getenv("MYSQL_CHDUMP_DATABASE"), os.Getenv("MYSQL_CHDUMP_USERNAME"), os.Getenv("MYSQL_CHDUMP_PASSWORD"), query)
+		w.Write(result)
 	}
 }
 
