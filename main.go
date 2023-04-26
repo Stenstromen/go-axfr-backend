@@ -186,6 +186,9 @@ func domainSearch(w http.ResponseWriter, r *http.Request, ps httprouter.Params) 
 	case "ee":
 		result := searchDomain(os.Getenv("MYSQL_EEDUMP_DATABASE"), os.Getenv("MYSQL_EEDUMP_USERNAME"), os.Getenv("MYSQL_EEDUMP_PASSWORD"), query)
 		w.Write(result)
+	case "sk":
+		result := searchDomain(os.Getenv("MYSQL_SKDUMP_DATABASE"), os.Getenv("MYSQL_SKDUMP_USERNAME"), os.Getenv("MYSQL_SKDUMP_PASSWORD"), query)
+		w.Write(result)
 	}
 }
 
