@@ -78,6 +78,15 @@ spec:
               secretKeyRef:
                 name: axfrlidumpmysqlpassword 
                 key: password
+          - name: MYSQL_EEDUMP_DATABASE
+            value: eedump
+          - name: MYSQL_EEDUMP_USERNAME
+            value: eedump
+          - name: MYSQL_EEDUMP_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: axfreedumpmysqlpassword 
+                key: password
           - name: AUTHHEADER_PASSWORD
             valueFrom:
               secretKeyRef:
