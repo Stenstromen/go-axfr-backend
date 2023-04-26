@@ -87,6 +87,15 @@ spec:
               secretKeyRef:
                 name: axfreedumpmysqlpassword 
                 key: password
+          - name: MYSQL_SKDUMP_DATABASE
+            value: skdump
+          - name: MYSQL_SKDUMP_USERNAME
+            value: skdump
+          - name: MYSQL_SKDUMP_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: axfrskdumpmysqlpassword 
+                key: password
           - name: AUTHHEADER_PASSWORD
             valueFrom:
               secretKeyRef:
