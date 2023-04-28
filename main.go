@@ -77,9 +77,14 @@ func sendRows(diffdb string, dbUser string, dbPass string, date int, page int) [
 	return j
 }
 
-func searchDomain(dumpdb string, dbUser string, dbPass string, query string) []byte {
+func searchDomain(dumpdb string, dbUser string, dbPass string, query string, page string) []byte {
 	db := dbConn(dumpdb, dbUser, dbPass)
-	rows, err := db.Query("SELECT domain FROM domains WHERE domain LIKE ? ORDER BY CHAR_LENGTH(domain) ASC", "%"+query+"%")
+	pageint, err := strconv.Atoi(page)
+	if err != nil {
+		panic(err.Error())
+	}
+	var rows2 = pageint * 20
+	rows, err := db.Query("SELECT domain FROM domains WHERE domain LIKE ? ORDER BY CHAR_LENGTH(domain) ASC OFFSET ? ROWS FETCH FIRST 20 ROWS ONLY", "%"+query+"%", rows2)
 	if err != nil {
 		panic(err.Error())
 	}
@@ -170,24 +175,25 @@ func sendNURows(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 func domainSearch(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 	tld := ps.ByName("tld")
 	query := ps.ByName("query")
+	page := ps.ByName("page")
 	switch tld {
 	case "se":
-		result := searchDomain(os.Getenv("MYSQL_SEDUMP_DATABASE"), os.Getenv("MYSQL_SEDUMP_USERNAME"), os.Getenv("MYSQL_SEDUMP_PASSWORD"), query)
+		result := searchDomain(os.Getenv("MYSQL_SEDUMP_DATABASE"), os.Getenv("MYSQL_SEDUMP_USERNAME"), os.Getenv("MYSQL_SEDUMP_PASSWORD"), query, page)
 		w.Write(result)
 	case "nu":
-		result := searchDomain(os.Getenv("MYSQL_NUDUMP_DATABASE"), os.Getenv("MYSQL_NUDUMP_USERNAME"), os.Getenv("MYSQL_NUDUMP_PASSWORD"), query)
+		result := searchDomain(os.Getenv("MYSQL_NUDUMP_DATABASE"), os.Getenv("MYSQL_NUDUMP_USERNAME"), os.Getenv("MYSQL_NUDUMP_PASSWORD"), query, page)
 		w.Write(result)
 	case "ch":
-		result := searchDomain(os.Getenv("MYSQL_CHDUMP_DATABASE"), os.Getenv("MYSQL_CHDUMP_USERNAME"), os.Getenv("MYSQL_CHDUMP_PASSWORD"), query)
+		result := searchDomain(os.Getenv("MYSQL_CHDUMP_DATABASE"), os.Getenv("MYSQL_CHDUMP_USERNAME"), os.Getenv("MYSQL_CHDUMP_PASSWORD"), query, page)
 		w.Write(result)
 	case "li":
-		result := searchDomain(os.Getenv("MYSQL_LIDUMP_DATABASE"), os.Getenv("MYSQL_LIDUMP_USERNAME"), os.Getenv("MYSQL_LIDUMP_PASSWORD"), query)
+		result := searchDomain(os.Getenv("MYSQL_LIDUMP_DATABASE"), os.Getenv("MYSQL_LIDUMP_USERNAME"), os.Getenv("MYSQL_LIDUMP_PASSWORD"), query, page)
 		w.Write(result)
 	case "ee":
-		result := searchDomain(os.Getenv("MYSQL_EEDUMP_DATABASE"), os.Getenv("MYSQL_EEDUMP_USERNAME"), os.Getenv("MYSQL_EEDUMP_PASSWORD"), query)
+		result := searchDomain(os.Getenv("MYSQL_EEDUMP_DATABASE"), os.Getenv("MYSQL_EEDUMP_USERNAME"), os.Getenv("MYSQL_EEDUMP_PASSWORD"), query, page)
 		w.Write(result)
 	case "sk":
-		result := searchDomain(os.Getenv("MYSQL_SKDUMP_DATABASE"), os.Getenv("MYSQL_SKDUMP_USERNAME"), os.Getenv("MYSQL_SKDUMP_PASSWORD"), query)
+		result := searchDomain(os.Getenv("MYSQL_SKDUMP_DATABASE"), os.Getenv("MYSQL_SKDUMP_USERNAME"), os.Getenv("MYSQL_SKDUMP_PASSWORD"), query, page)
 		w.Write(result)
 	}
 }
@@ -207,7 +213,7 @@ func main() {
 	router.GET("/nu/:page", middleware(sendNUDates))
 	router.GET("/sedomains/:date/:page", middleware(sendSERows))
 	router.GET("/nudomains/:date/:page", middleware(sendNURows))
-	router.GET("/search/:tld/:query", middleware(domainSearch))
+	router.GET("/search/:tld/:query/:page", middleware(domainSearch))
 
 	http.ListenAndServe(":8080", router)
 }
