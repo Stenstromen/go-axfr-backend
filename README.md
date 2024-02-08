@@ -3,7 +3,8 @@
 AXFR-Backend Node.JS project rewrite in Go
 
 ## Required env
-```
+
+```bash
 MYSQL_HOSTNAME        =   STRING || INT
 MYSQL_SE_USERNAME     =   STRING
 MYSQL_SE_PASSWORD     =   STRING
