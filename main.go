@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"time"
 
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/julienschmidt/httprouter"
@@ -192,6 +193,74 @@ func domainSearch(w http.ResponseWriter, r *http.Request, ps httprouter.Params) 
 	}
 }
 
+func domainAmounts(dumpdb, dbUser, dbPass string) []byte {
+	type DateAmount struct {
+		Date   string `json:"date"`
+		Amount int    `json:"amount"`
+	}
+
+	db := dbConn(dumpdb, dbUser, dbPass)
+	defer db.Close()
+
+	rows, err := db.Query("SELECT date, amount FROM dates")
+	if err != nil {
+		log.Panic(err.Error())
+	}
+	defer rows.Close()
+
+	var results []DateAmount
+
+	for rows.Next() {
+		var da DateAmount
+		err := rows.Scan(&da.Date, &da.Amount)
+		if err != nil {
+			log.Panic(err.Error())
+		}
+
+		parsedDate, err := time.Parse("20060102", da.Date)
+		if err != nil {
+			log.Panic(err.Error())
+		}
+		da.Date = parsedDate.Format("2006-01-02")
+		results = append(results, da)
+	}
+
+	if err = rows.Err(); err != nil {
+		log.Panic(err.Error())
+	}
+
+	jsonData, err := json.Marshal(results)
+	if err != nil {
+		log.Panic(err.Error())
+	}
+
+	return jsonData
+}
+
+func domainStats(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+	tld := ps.ByName("tld")
+	switch tld {
+	case "se":
+		result := domainAmounts(os.Getenv("MYSQL_SEDUMP_DATABASE"), os.Getenv("MYSQL_SEDUMP_USERNAME"), os.Getenv("MYSQL_SEDUMP_PASSWORD"))
+		w.Write(result)
+	case "nu":
+		result := domainAmounts(os.Getenv("MYSQL_NUDUMP_DATABASE"), os.Getenv("MYSQL_NUDUMP_USERNAME"), os.Getenv("MYSQL_NUDUMP_PASSWORD"))
+		w.Write(result)
+	case "ch":
+		result := domainAmounts(os.Getenv("MYSQL_CHDUMP_DATABASE"), os.Getenv("MYSQL_CHDUMP_USERNAME"), os.Getenv("MYSQL_CHDUMP_PASSWORD"))
+		w.Write(result)
+	case "li":
+		result := domainAmounts(os.Getenv("MYSQL_LIDUMP_DATABASE"), os.Getenv("MYSQL_LIDUMP_USERNAME"), os.Getenv("MYSQL_LIDUMP_PASSWORD"))
+		w.Write(result)
+	case "ee":
+		result := domainAmounts(os.Getenv("MYSQL_EEDUMP_DATABASE"), os.Getenv("MYSQL_EEDUMP_USERNAME"), os.Getenv("MYSQL_EEDUMP_PASSWORD"))
+		w.Write(result)
+	case "sk":
+		result := domainAmounts(os.Getenv("MYSQL_SKDUMP_DATABASE"), os.Getenv("MYSQL_SKDUMP_USERNAME"), os.Getenv("MYSQL_SKDUMP_PASSWORD"))
+		w.Write(result)
+	}
+}
+
 func main() {
 	router := httprouter.New()
 
@@ -208,6 +277,7 @@ func main() {
 	router.GET("/sedomains/:date/:page", middleware(sendSERows))
 	router.GET("/nudomains/:date/:page", middleware(sendNURows))
 	router.GET("/search/:tld/:query", middleware(domainSearch))
+	router.GET("/stats/:tld", middleware(domainStats))
 
 	http.ListenAndServe(":8080", router)
 }
