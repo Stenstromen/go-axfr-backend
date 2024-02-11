@@ -3,7 +3,9 @@ package main
 import (
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"strconv"
@@ -13,18 +15,22 @@ import (
 	"github.com/julienschmidt/httprouter"
 )
 
-func dbConn(dbName string, dbUser string, dbPass string) (db *sql.DB) {
+func dbConn(dbName string, dbUser string, dbPass string) (db *sql.DB, err error) {
 	dbDriver := "mysql"
 	MYSQL_HOSTNAME := os.Getenv("MYSQL_HOSTNAME")
-	db, err := sql.Open(dbDriver, dbUser+":"+dbPass+"@tcp"+"("+MYSQL_HOSTNAME+")"+"/"+dbName)
+	db, err = sql.Open(dbDriver, dbUser+":"+dbPass+"@tcp"+"("+MYSQL_HOSTNAME+")"+"/"+dbName)
 	if err != nil {
-		panic(err.Error())
+		return nil, err
 	}
-	return db
+	err = db.Ping()
+	if err != nil {
+		return nil, err
+	}
+	return db, nil
 }
 
 func sendDates(diffdb string, dbUser string, dbPass string, pageordate int) []byte {
-	db := dbConn(diffdb, dbUser, dbPass)
+	db, _ := dbConn(diffdb, dbUser, dbPass)
 
 	var rows1 = pageordate * 20
 	var rows2 int
@@ -56,7 +62,7 @@ func sendDates(diffdb string, dbUser string, dbPass string, pageordate int) []by
 }
 
 func sendRows(diffdb string, dbUser string, dbPass string, date int, page int) []byte {
-	db := dbConn(diffdb, dbUser, dbPass)
+	db, _ := dbConn(diffdb, dbUser, dbPass)
 	var rows2 = page * 20
 	rows, err := db.Query("SELECT domain FROM domains JOIN dates ON domains.dategrp = dates.id WHERE date = ? ORDER BY domain ASC OFFSET ? ROWS FETCH FIRST 20 ROWS ONLY", date, rows2)
 	if err != nil {
@@ -79,7 +85,7 @@ func sendRows(diffdb string, dbUser string, dbPass string, date int, page int) [
 }
 
 func searchDomain(dumpdb string, dbUser string, dbPass string, query string) []byte {
-	db := dbConn(dumpdb, dbUser, dbPass)
+	db, _ := dbConn(dumpdb, dbUser, dbPass)
 	rows, err := db.Query("SELECT domain FROM domains WHERE domain LIKE ? ORDER BY CHAR_LENGTH(domain) ASC", "%"+query+"%")
 	if err != nil {
 		panic(err.Error())
@@ -199,7 +205,7 @@ func domainAmounts(dumpdb, dbUser, dbPass string) []byte {
 		Amount int    `json:"amount"`
 	}
 
-	db := dbConn(dumpdb, dbUser, dbPass)
+	db, _ := dbConn(dumpdb, dbUser, dbPass)
 	defer db.Close()
 
 	rows, err := db.Query("SELECT date, amount FROM dates")
@@ -261,6 +267,60 @@ func domainStats(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 	}
 }
 
+type dbConfig struct {
+	database, username, password, dbName string
+}
+
+func checkDatabases(dbs []dbConfig) error {
+	for _, cfg := range dbs {
+		conn, err := dbConn(cfg.database, cfg.username, cfg.password)
+		if err != nil {
+			log.Printf("Error connecting to %s database: %v", cfg.dbName, err)
+			return fmt.Errorf("failed to connect to %s database: %v", cfg.dbName, err)
+		}
+		defer conn.Close()
+	}
+	return nil
+}
+
+func readyness(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
+	dbs := []dbConfig{
+		{os.Getenv("MYSQL_NU_DATABASE"), os.Getenv("MYSQL_NU_USERNAME"), os.Getenv("MYSQL_NU_PASSWORD"), "NU"},
+		{os.Getenv("MYSQL_SE_DATABASE"), os.Getenv("MYSQL_SE_USERNAME"), os.Getenv("MYSQL_SE_PASSWORD"), "SE"},
+		{os.Getenv("MYSQL_SEDUMP_DATABASE"), os.Getenv("MYSQL_SEDUMP_USERNAME"), os.Getenv("MYSQL_SEDUMP_PASSWORD"), "SE dump"},
+		{os.Getenv("MYSQL_NUDUMP_DATABASE"), os.Getenv("MYSQL_NUDUMP_USERNAME"), os.Getenv("MYSQL_NUDUMP_PASSWORD"), "NU dump"},
+		{os.Getenv("MYSQL_CHDUMP_DATABASE"), os.Getenv("MYSQL_CHDUMP_USERNAME"), os.Getenv("MYSQL_CHDUMP_PASSWORD"), "CH dump"},
+		{os.Getenv("MYSQL_LIDUMP_DATABASE"), os.Getenv("MYSQL_LIDUMP_USERNAME"), os.Getenv("MYSQL_LIDUMP_PASSWORD"), "LI dump"},
+		{os.Getenv("MYSQL_EEDUMP_DATABASE"), os.Getenv("MYSQL_EEDUMP_USERNAME"), os.Getenv("MYSQL_EEDUMP_PASSWORD"), "EE dump"},
+		{os.Getenv("MYSQL_SKDUMP_DATABASE"), os.Getenv("MYSQL_SKDUMP_USERNAME"), os.Getenv("MYSQL_SKDUMP_PASSWORD"), "SK dump"},
+	}
+
+	if err := checkDatabases(dbs); err != nil {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		w.Write([]byte(err.Error()))
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("All database connections successful"))
+}
+
+func liveness(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
+	MYSQL_HOSTNAME := os.Getenv("MYSQL_HOSTNAME")
+	timeout := 5 * time.Second
+
+	conn, err := net.DialTimeout("tcp", MYSQL_HOSTNAME+":3306", timeout)
+	if err != nil {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		w.Write([]byte("MySQL server is not reachable"))
+		return
+	}
+	defer conn.Close()
+
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("MySQL server is reachable"))
+}
+
 func main() {
 	router := httprouter.New()
 
@@ -272,6 +332,8 @@ func main() {
 		w.WriteHeader(http.StatusNoContent)
 	})
 
+	router.GET("/ready", readyness)
+	router.GET("/status", liveness)
 	router.GET("/se/:page", middleware(sendSEDates))
 	router.GET("/nu/:page", middleware(sendNUDates))
 	router.GET("/sedomains/:date/:page", middleware(sendSERows))
