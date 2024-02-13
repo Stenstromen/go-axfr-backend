@@ -109,6 +109,8 @@ func searchDomain(dumpdb string, dbUser string, dbPass string, query string) []b
 
 func middleware(next httprouter.Handle) httprouter.Handle {
 	return func(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+		http.MaxBytesReader(w, r.Body, 1048576)
+
 		w.Header().Set("access-control-allow-headers", "Accept,content-type,Access-Control-Allow-Origin,access-control-allow-headers, access-control-allow-methods, Authorization")
 		w.Header().Set("content-type", "application/json")
 		w.Header().Set("Access-Control-Allow-Origin", os.Getenv("CORS_HEADER"))
