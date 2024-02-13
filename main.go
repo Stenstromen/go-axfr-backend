@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	_ "github.com/go-sql-driver/mysql"
@@ -112,6 +113,7 @@ func middleware(next httprouter.Handle) httprouter.Handle {
 		w.Header().Set("content-type", "application/json")
 		w.Header().Set("Access-Control-Allow-Origin", os.Getenv("CORS_HEADER"))
 		w.Header().Set("access-control-allow-methods", "GET, OPTIONS")
+
 		authHeader := r.Header.Get("Authorization")
 		if authHeader != os.Getenv("AUTHHEADER_PASSWORD") {
 			resp := make(map[string]string)
@@ -122,9 +124,17 @@ func middleware(next httprouter.Handle) httprouter.Handle {
 			}
 			w.WriteHeader(http.StatusForbidden)
 			w.Write(jsonResp)
-		} else {
-			next(w, r, ps)
+			return
 		}
+
+		allowedReferer := os.Getenv("ALLOWED_REFERER")
+		referer := r.Header.Get("Referer")
+		if referer == "" || !strings.HasPrefix(referer, allowedReferer) {
+			http.Error(w, "Access denied: invalid referer", http.StatusForbidden)
+			return
+		}
+
+		next(w, r, ps)
 	}
 }
 
