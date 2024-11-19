@@ -247,14 +247,14 @@ func domainStats(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 
 func readyness(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 	dbs := []models.DbConfig{
-		{os.Getenv("MYSQL_NU_DATABASE"), os.Getenv("MYSQL_NU_USERNAME"), os.Getenv("MYSQL_NU_PASSWORD"), "NU"},
-		{os.Getenv("MYSQL_SE_DATABASE"), os.Getenv("MYSQL_SE_USERNAME"), os.Getenv("MYSQL_SE_PASSWORD"), "SE"},
-		{os.Getenv("MYSQL_SEDUMP_DATABASE"), os.Getenv("MYSQL_SEDUMP_USERNAME"), os.Getenv("MYSQL_SEDUMP_PASSWORD"), "SE dump"},
-		{os.Getenv("MYSQL_NUDUMP_DATABASE"), os.Getenv("MYSQL_NUDUMP_USERNAME"), os.Getenv("MYSQL_NUDUMP_PASSWORD"), "NU dump"},
-		{os.Getenv("MYSQL_CHDUMP_DATABASE"), os.Getenv("MYSQL_CHDUMP_USERNAME"), os.Getenv("MYSQL_CHDUMP_PASSWORD"), "CH dump"},
-		{os.Getenv("MYSQL_LIDUMP_DATABASE"), os.Getenv("MYSQL_LIDUMP_USERNAME"), os.Getenv("MYSQL_LIDUMP_PASSWORD"), "LI dump"},
-		{os.Getenv("MYSQL_EEDUMP_DATABASE"), os.Getenv("MYSQL_EEDUMP_USERNAME"), os.Getenv("MYSQL_EEDUMP_PASSWORD"), "EE dump"},
-		{os.Getenv("MYSQL_SKDUMP_DATABASE"), os.Getenv("MYSQL_SKDUMP_USERNAME"), os.Getenv("MYSQL_SKDUMP_PASSWORD"), "SK dump"},
+		{Database: os.Getenv("MYSQL_NU_DATABASE"), Username: os.Getenv("MYSQL_NU_USERNAME"), Password: os.Getenv("MYSQL_NU_PASSWORD"), Name: "NU"},
+		{Database: os.Getenv("MYSQL_SE_DATABASE"), Username: os.Getenv("MYSQL_SE_USERNAME"), Password: os.Getenv("MYSQL_SE_PASSWORD"), Name: "SE"},
+		{Database: os.Getenv("MYSQL_SEDUMP_DATABASE"), Username: os.Getenv("MYSQL_SEDUMP_USERNAME"), Password: os.Getenv("MYSQL_SEDUMP_PASSWORD"), Name: "SE dump"},
+		{Database: os.Getenv("MYSQL_NUDUMP_DATABASE"), Username: os.Getenv("MYSQL_NUDUMP_USERNAME"), Password: os.Getenv("MYSQL_NUDUMP_PASSWORD"), Name: "NU dump"},
+		{Database: os.Getenv("MYSQL_CHDUMP_DATABASE"), Username: os.Getenv("MYSQL_CHDUMP_USERNAME"), Password: os.Getenv("MYSQL_CHDUMP_PASSWORD"), Name: "CH dump"},
+		{Database: os.Getenv("MYSQL_LIDUMP_DATABASE"), Username: os.Getenv("MYSQL_LIDUMP_USERNAME"), Password: os.Getenv("MYSQL_LIDUMP_PASSWORD"), Name: "LI dump"},
+		{Database: os.Getenv("MYSQL_EEDUMP_DATABASE"), Username: os.Getenv("MYSQL_EEDUMP_USERNAME"), Password: os.Getenv("MYSQL_EEDUMP_PASSWORD"), Name: "EE dump"},
+		{Database: os.Getenv("MYSQL_SKDUMP_DATABASE"), Username: os.Getenv("MYSQL_SKDUMP_USERNAME"), Password: os.Getenv("MYSQL_SKDUMP_PASSWORD"), Name: "SK dump"},
 	}
 
 	if err := health.CheckDatabases(dbs); err != nil {

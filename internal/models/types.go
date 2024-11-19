@@ -19,4 +19,5 @@ type DbConfig struct {
 	Username string
 	Password string
 	DbName   string
+	Name     string
 }
