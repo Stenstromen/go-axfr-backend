@@ -1,9 +1,10 @@
-package main
+package api
 
 import (
 	"database/sql"
 	"encoding/json"
-	"fmt"
+	"go-axfr-backend/internal/models"
+	"go-axfr-backend/pkg/health"
 	"log"
 	"net"
 	"net/http"
@@ -11,7 +12,6 @@ import (
 	"strconv"
 	"time"
 
-	_ "github.com/go-sql-driver/mysql"
 	"github.com/julienschmidt/httprouter"
 )
 
@@ -27,6 +27,29 @@ func dbConn(dbName string, dbUser string, dbPass string) (db *sql.DB, err error)
 		return nil, err
 	}
 	return db, nil
+}
+
+func sendRows(diffdb string, dbUser string, dbPass string, date int, page int) []byte {
+	db, _ := dbConn(diffdb, dbUser, dbPass)
+	var rows2 = page * 20
+	rows, err := db.Query("SELECT domain FROM domains JOIN dates ON domains.dategrp = dates.id WHERE date = ? ORDER BY domain ASC OFFSET ? ROWS FETCH FIRST 20 ROWS ONLY", date, rows2)
+	if err != nil {
+		panic(err.Error())
+	}
+	defer rows.Close()
+
+	type Rows struct {
+		Domain string `json:"domain"`
+	}
+	var arr []Rows
+	for rows.Next() {
+		var domain string
+		rows.Scan(&domain)
+		a := Rows{Domain: domain}
+		arr = append(arr, a)
+	}
+	j, _ := json.Marshal(arr)
+	return j
 }
 
 func sendDates(diffdb string, dbUser string, dbPass string, pageordate int) []byte {
@@ -61,29 +84,6 @@ func sendDates(diffdb string, dbUser string, dbPass string, pageordate int) []by
 	return j
 }
 
-func sendRows(diffdb string, dbUser string, dbPass string, date int, page int) []byte {
-	db, _ := dbConn(diffdb, dbUser, dbPass)
-	var rows2 = page * 20
-	rows, err := db.Query("SELECT domain FROM domains JOIN dates ON domains.dategrp = dates.id WHERE date = ? ORDER BY domain ASC OFFSET ? ROWS FETCH FIRST 20 ROWS ONLY", date, rows2)
-	if err != nil {
-		panic(err.Error())
-	}
-	defer rows.Close()
-
-	type Rows struct {
-		Domain string `json:"domain"`
-	}
-	var arr []Rows
-	for rows.Next() {
-		var domain string
-		rows.Scan(&domain)
-		a := Rows{Domain: domain}
-		arr = append(arr, a)
-	}
-	j, _ := json.Marshal(arr)
-	return j
-}
-
 func searchDomain(dumpdb string, dbUser string, dbPass string, query string) []byte {
 	db, _ := dbConn(dumpdb, dbUser, dbPass)
 	rows, err := db.Query("SELECT domain FROM domains WHERE domain LIKE ? ORDER BY CHAR_LENGTH(domain) ASC", "%"+query+"%")
@@ -106,12 +106,48 @@ func searchDomain(dumpdb string, dbUser string, dbPass string, query string) []b
 	return j
 }
 
-func middleware(next httprouter.Handle) httprouter.Handle {
-	return func(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
-		http.MaxBytesReader(w, r.Body, 1048576)
-		w.Header().Set("content-type", "application/json")
-		next(w, r, ps)
+func domainAmounts(dumpdb, dbUser, dbPass string) []byte {
+	type DateAmount struct {
+		Date   string `json:"date"`
+		Amount int    `json:"amount"`
 	}
+
+	db, _ := dbConn(dumpdb, dbUser, dbPass)
+	defer db.Close()
+
+	rows, err := db.Query("SELECT date, amount FROM dates")
+	if err != nil {
+		log.Panic(err.Error())
+	}
+	defer rows.Close()
+
+	var results []DateAmount
+
+	for rows.Next() {
+		var da DateAmount
+		err := rows.Scan(&da.Date, &da.Amount)
+		if err != nil {
+			log.Panic(err.Error())
+		}
+
+		parsedDate, err := time.Parse("20060102", da.Date)
+		if err != nil {
+			log.Panic(err.Error())
+		}
+		da.Date = parsedDate.Format("2006-01-02")
+		results = append(results, da)
+	}
+
+	if err = rows.Err(); err != nil {
+		log.Panic(err.Error())
+	}
+
+	jsonData, err := json.Marshal(results)
+	if err != nil {
+		log.Panic(err.Error())
+	}
+
+	return jsonData
 }
 
 func sendSEDates(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
@@ -185,50 +221,6 @@ func domainSearch(w http.ResponseWriter, r *http.Request, ps httprouter.Params) 
 	}
 }
 
-func domainAmounts(dumpdb, dbUser, dbPass string) []byte {
-	type DateAmount struct {
-		Date   string `json:"date"`
-		Amount int    `json:"amount"`
-	}
-
-	db, _ := dbConn(dumpdb, dbUser, dbPass)
-	defer db.Close()
-
-	rows, err := db.Query("SELECT date, amount FROM dates")
-	if err != nil {
-		log.Panic(err.Error())
-	}
-	defer rows.Close()
-
-	var results []DateAmount
-
-	for rows.Next() {
-		var da DateAmount
-		err := rows.Scan(&da.Date, &da.Amount)
-		if err != nil {
-			log.Panic(err.Error())
-		}
-
-		parsedDate, err := time.Parse("20060102", da.Date)
-		if err != nil {
-			log.Panic(err.Error())
-		}
-		da.Date = parsedDate.Format("2006-01-02")
-		results = append(results, da)
-	}
-
-	if err = rows.Err(); err != nil {
-		log.Panic(err.Error())
-	}
-
-	jsonData, err := json.Marshal(results)
-	if err != nil {
-		log.Panic(err.Error())
-	}
-
-	return jsonData
-}
-
 func domainStats(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 	tld := ps.ByName("tld")
 	switch tld {
@@ -253,24 +245,8 @@ func domainStats(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 	}
 }
 
-type dbConfig struct {
-	database, username, password, dbName string
-}
-
-func checkDatabases(dbs []dbConfig) error {
-	for _, cfg := range dbs {
-		conn, err := dbConn(cfg.database, cfg.username, cfg.password)
-		if err != nil {
-			log.Printf("Error connecting to %s database: %v", cfg.dbName, err)
-			return fmt.Errorf("failed to connect to %s database: %v", cfg.dbName, err)
-		}
-		defer conn.Close()
-	}
-	return nil
-}
-
 func readyness(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
-	dbs := []dbConfig{
+	dbs := []models.DbConfig{
 		{os.Getenv("MYSQL_NU_DATABASE"), os.Getenv("MYSQL_NU_USERNAME"), os.Getenv("MYSQL_NU_PASSWORD"), "NU"},
 		{os.Getenv("MYSQL_SE_DATABASE"), os.Getenv("MYSQL_SE_USERNAME"), os.Getenv("MYSQL_SE_PASSWORD"), "SE"},
 		{os.Getenv("MYSQL_SEDUMP_DATABASE"), os.Getenv("MYSQL_SEDUMP_USERNAME"), os.Getenv("MYSQL_SEDUMP_PASSWORD"), "SE dump"},
@@ -281,7 +257,7 @@ func readyness(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 		{os.Getenv("MYSQL_SKDUMP_DATABASE"), os.Getenv("MYSQL_SKDUMP_USERNAME"), os.Getenv("MYSQL_SKDUMP_PASSWORD"), "SK dump"},
 	}
 
-	if err := checkDatabases(dbs); err != nil {
+	if err := health.CheckDatabases(dbs); err != nil {
 		w.WriteHeader(http.StatusServiceUnavailable)
 		w.Write([]byte(err.Error()))
 		return
@@ -305,25 +281,4 @@ func liveness(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("MySQL server is reachable"))
-}
-
-func main() {
-	router := httprouter.New()
-
-	router.GlobalOPTIONS = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		header := w.Header()
-		header.Set("Access-Control-Allow-Methods", header.Get("Allow"))
-		w.WriteHeader(http.StatusNoContent)
-	})
-
-	router.GET("/ready", readyness)
-	router.GET("/status", liveness)
-	router.GET("/se/:page", middleware(sendSEDates))
-	router.GET("/nu/:page", middleware(sendNUDates))
-	router.GET("/sedomains/:date/:page", middleware(sendSERows))
-	router.GET("/nudomains/:date/:page", middleware(sendNURows))
-	router.GET("/search/:tld/:query", middleware(domainSearch))
-	router.GET("/stats/:tld", middleware(domainStats))
-
-	http.ListenAndServe(":8080", router)
 }
