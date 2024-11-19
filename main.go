@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"os"
 	"strconv"
-	"strings"
 	"time"
 
 	_ "github.com/go-sql-driver/mysql"
@@ -110,32 +109,7 @@ func searchDomain(dumpdb string, dbUser string, dbPass string, query string) []b
 func middleware(next httprouter.Handle) httprouter.Handle {
 	return func(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 		http.MaxBytesReader(w, r.Body, 1048576)
-
-		w.Header().Set("access-control-allow-headers", "Accept,content-type,Access-Control-Allow-Origin,access-control-allow-headers, access-control-allow-methods, Authorization")
 		w.Header().Set("content-type", "application/json")
-		w.Header().Set("Access-Control-Allow-Origin", os.Getenv("CORS_HEADER"))
-		w.Header().Set("access-control-allow-methods", "GET, OPTIONS")
-
-		authHeader := r.Header.Get("Authorization")
-		if authHeader != os.Getenv("AUTHHEADER_PASSWORD") {
-			resp := make(map[string]string)
-			resp["error"] = "Invalid or no credentials"
-			jsonResp, err := json.Marshal(resp)
-			if err != nil {
-				log.Fatalf("Error happened in JSON marshal. Err: %s", err)
-			}
-			w.WriteHeader(http.StatusForbidden)
-			w.Write(jsonResp)
-			return
-		}
-
-		allowedReferer := os.Getenv("ALLOWED_REFERER")
-		referer := r.Header.Get("Referer")
-		if referer == "" || !strings.HasPrefix(referer, allowedReferer) {
-			http.Error(w, "Access denied: invalid referer", http.StatusForbidden)
-			return
-		}
-
 		next(w, r, ps)
 	}
 }
@@ -339,8 +313,6 @@ func main() {
 	router.GlobalOPTIONS = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		header := w.Header()
 		header.Set("Access-Control-Allow-Methods", header.Get("Allow"))
-		header.Set("Access-Control-Allow-Origin", os.Getenv("CORS_HEADER"))
-		header.Set("access-control-allow-headers", "Accept,content-type,Access-Control-Allow-Origin,access-control-allow-headers, access-control-allow-methods, Authorization")
 		w.WriteHeader(http.StatusNoContent)
 	})
 
