@@ -2,27 +2,25 @@ package api
 
 import (
 	"net/http"
-
-	"github.com/julienschmidt/httprouter"
 )
 
-func SetupRoutes() *httprouter.Router {
-	router := httprouter.New()
+func SetupRoutes() *http.ServeMux {
+	mux := http.NewServeMux()
 
-	router.GlobalOPTIONS = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("OPTIONS /", func(w http.ResponseWriter, r *http.Request) {
 		header := w.Header()
 		header.Set("Access-Control-Allow-Methods", header.Get("Allow"))
 		w.WriteHeader(http.StatusNoContent)
 	})
 
-	router.GET("/ready", readyness)
-	router.GET("/status", liveness)
-	router.GET("/se/:page", Middleware(sendSEDates))
-	router.GET("/nu/:page", Middleware(sendNUDates))
-	router.GET("/sedomains/:date/:page", Middleware(sendSERows))
-	router.GET("/nudomains/:date/:page", Middleware(sendNURows))
-	router.GET("/search/:tld/:query", Middleware(domainSearch))
-	router.GET("/stats/:tld", Middleware(domainStats))
+	mux.HandleFunc("/ready", readyness)
+	mux.HandleFunc("/status", liveness)
+	mux.HandleFunc("/se/", Middleware(sendSEDates))
+	mux.HandleFunc("/nu/", Middleware(sendNUDates))
+	mux.HandleFunc("/sedomains/", Middleware(sendSERows))
+	mux.HandleFunc("/nudomains/", Middleware(sendNURows))
+	mux.HandleFunc("/search/", Middleware(domainSearch))
+	mux.HandleFunc("/stats/", Middleware(domainStats))
 
-	return router
+	return mux
 }

@@ -3,6 +3,7 @@ package api
 import (
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"go-axfr-backend/internal/models"
 	"go-axfr-backend/pkg/health"
 	"log"
@@ -10,10 +11,58 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"time"
-
-	"github.com/julienschmidt/httprouter"
 )
+
+type TLDConfig struct {
+	Database string
+	Username string
+	Password string
+}
+
+var tldConfigs = map[string]TLDConfig{
+	"se": {
+		Database: "MYSQL_SEDUMP_DATABASE",
+		Username: "MYSQL_SEDUMP_USERNAME",
+		Password: "MYSQL_SEDUMP_PASSWORD",
+	},
+	"nu": {
+		Database: "MYSQL_NUDUMP_DATABASE",
+		Username: "MYSQL_NUDUMP_USERNAME",
+		Password: "MYSQL_NUDUMP_PASSWORD",
+	},
+	"ch": {
+		Database: "MYSQL_CHDUMP_DATABASE",
+		Username: "MYSQL_CHDUMP_USERNAME",
+		Password: "MYSQL_CHDUMP_PASSWORD",
+	},
+	"li": {
+		Database: "MYSQL_LIDUMP_DATABASE",
+		Username: "MYSQL_LIDUMP_USERNAME",
+		Password: "MYSQL_LIDUMP_PASSWORD",
+	},
+	"ee": {
+		Database: "MYSQL_EEDUMP_DATABASE",
+		Username: "MYSQL_EEDUMP_USERNAME",
+		Password: "MYSQL_EEDUMP_PASSWORD",
+	},
+	"sk": {
+		Database: "MYSQL_SKDUMP_DATABASE",
+		Username: "MYSQL_SKDUMP_USERNAME",
+		Password: "MYSQL_SKDUMP_PASSWORD",
+	},
+	"se_diff": {
+		Database: "MYSQL_SE_DATABASE",
+		Username: "MYSQL_SE_USERNAME",
+		Password: "MYSQL_SE_PASSWORD",
+	},
+	"nu_diff": {
+		Database: "MYSQL_NU_DATABASE",
+		Username: "MYSQL_NU_USERNAME",
+		Password: "MYSQL_NU_PASSWORD",
+	},
+}
 
 func dbConn(dbName string, dbUser string, dbPass string) (db *sql.DB, err error) {
 	dbDriver := "mysql"
@@ -84,11 +133,18 @@ func sendDates(diffdb string, dbUser string, dbPass string, pageordate int) []by
 	return j
 }
 
-func searchDomain(dumpdb string, dbUser string, dbPass string, query string) []byte {
-	db, _ := dbConn(dumpdb, dbUser, dbPass)
+func searchDomain(dumpdb, dbUser, dbPass, query string) []byte {
+	db, err := dbConn(dumpdb, dbUser, dbPass)
+	if err != nil {
+		log.Printf("Database connection error: %v", err)
+		return []byte(`{"error": "database connection failed"}`)
+	}
+	defer db.Close()
+
 	rows, err := db.Query("SELECT domain FROM domains WHERE domain LIKE ? ORDER BY CHAR_LENGTH(domain) ASC", "%"+query+"%")
 	if err != nil {
-		panic(err.Error())
+		log.Printf("Query error: %v", err)
+		return []byte(`{"error": "query failed"}`)
 	}
 	defer rows.Close()
 
@@ -150,102 +206,123 @@ func domainAmounts(dumpdb, dbUser, dbPass string) []byte {
 	return jsonData
 }
 
-func sendSEDates(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
-	page, err := strconv.Atoi(ps.ByName("page"))
-	if err != nil {
-		panic(err.Error())
+func sendSEDates(w http.ResponseWriter, r *http.Request) {
+	pathParts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+	if len(pathParts) != 2 {
+		http.Error(w, "Invalid path", http.StatusBadRequest)
+		return
 	}
+
+	page, err := strconv.Atoi(pathParts[1])
+	if err != nil {
+		http.Error(w, "Invalid page number", http.StatusBadRequest)
+		return
+	}
+
 	result := sendDates(os.Getenv("MYSQL_SE_DATABASE"), os.Getenv("MYSQL_SE_USERNAME"), os.Getenv("MYSQL_SE_PASSWORD"), page)
 	w.Write(result)
 }
 
-func sendNUDates(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
-	page, err := strconv.Atoi(ps.ByName("page"))
-	if err != nil {
-		panic(err.Error())
+func sendNUDates(w http.ResponseWriter, r *http.Request) {
+	pathParts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+	if len(pathParts) != 2 {
+		http.Error(w, "Invalid path", http.StatusBadRequest)
+		return
 	}
+
+	page, err := strconv.Atoi(pathParts[1])
+	if err != nil {
+		http.Error(w, "Invalid page number", http.StatusBadRequest)
+		return
+	}
+
 	result := sendDates(os.Getenv("MYSQL_NU_DATABASE"), os.Getenv("MYSQL_NU_USERNAME"), os.Getenv("MYSQL_NU_PASSWORD"), page)
 	w.Write(result)
 }
 
-func sendSERows(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
-	date, err := strconv.Atoi(ps.ByName("date"))
-	if err != nil {
-		panic(err.Error())
+func sendSERows(w http.ResponseWriter, r *http.Request) {
+	pathParts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+	if len(pathParts) != 3 {
+		http.Error(w, "Invalid path", http.StatusBadRequest)
+		return
 	}
-	page, err := strconv.Atoi(ps.ByName("page"))
+
+	date, err := strconv.Atoi(pathParts[1])
 	if err != nil {
-		panic(err.Error())
+		http.Error(w, "Invalid date number", http.StatusBadRequest)
+		return
+	}
+
+	page, err := strconv.Atoi(pathParts[2])
+	if err != nil {
+		http.Error(w, "Invalid page number", http.StatusBadRequest)
+		return
 	}
 
 	result := sendRows(os.Getenv("MYSQL_SE_DATABASE"), os.Getenv("MYSQL_SE_USERNAME"), os.Getenv("MYSQL_SE_PASSWORD"), date, page)
 	w.Write(result)
 }
 
-func sendNURows(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
-	date, err := strconv.Atoi(ps.ByName("date"))
-	if err != nil {
-		panic(err.Error())
+func sendNURows(w http.ResponseWriter, r *http.Request) {
+	pathParts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+	if len(pathParts) != 3 {
+		http.Error(w, "Invalid path", http.StatusBadRequest)
+		return
 	}
-	page, err := strconv.Atoi(ps.ByName("page"))
+
+	date, err := strconv.Atoi(pathParts[1])
 	if err != nil {
-		panic(err.Error())
+		http.Error(w, "Invalid date number", http.StatusBadRequest)
+		return
+	}
+
+	page, err := strconv.Atoi(pathParts[2])
+	if err != nil {
+		http.Error(w, "Invalid page number", http.StatusBadRequest)
+		return
 	}
 
 	result := sendRows(os.Getenv("MYSQL_NU_DATABASE"), os.Getenv("MYSQL_NU_USERNAME"), os.Getenv("MYSQL_NU_PASSWORD"), date, page)
 	w.Write(result)
 }
 
-func domainSearch(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
-	tld := ps.ByName("tld")
-	query := ps.ByName("query")
-	switch tld {
-	case "se":
-		result := searchDomain(os.Getenv("MYSQL_SEDUMP_DATABASE"), os.Getenv("MYSQL_SEDUMP_USERNAME"), os.Getenv("MYSQL_SEDUMP_PASSWORD"), query)
-		w.Write(result)
-	case "nu":
-		result := searchDomain(os.Getenv("MYSQL_NUDUMP_DATABASE"), os.Getenv("MYSQL_NUDUMP_USERNAME"), os.Getenv("MYSQL_NUDUMP_PASSWORD"), query)
-		w.Write(result)
-	case "ch":
-		result := searchDomain(os.Getenv("MYSQL_CHDUMP_DATABASE"), os.Getenv("MYSQL_CHDUMP_USERNAME"), os.Getenv("MYSQL_CHDUMP_PASSWORD"), query)
-		w.Write(result)
-	case "li":
-		result := searchDomain(os.Getenv("MYSQL_LIDUMP_DATABASE"), os.Getenv("MYSQL_LIDUMP_USERNAME"), os.Getenv("MYSQL_LIDUMP_PASSWORD"), query)
-		w.Write(result)
-	case "ee":
-		result := searchDomain(os.Getenv("MYSQL_EEDUMP_DATABASE"), os.Getenv("MYSQL_EEDUMP_USERNAME"), os.Getenv("MYSQL_EEDUMP_PASSWORD"), query)
-		w.Write(result)
-	case "sk":
-		result := searchDomain(os.Getenv("MYSQL_SKDUMP_DATABASE"), os.Getenv("MYSQL_SKDUMP_USERNAME"), os.Getenv("MYSQL_SKDUMP_PASSWORD"), query)
-		w.Write(result)
+func domainSearch(w http.ResponseWriter, r *http.Request) {
+	parts, err := getPathParams(r.URL.Path, 3)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
 	}
+
+	tld, query := parts[1], parts[2]
+	db, user, pass, err := getTLDEnvVars(tld)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	result := searchDomain(db, user, pass, query)
+	w.Write(result)
 }
 
-func domainStats(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
-	tld := ps.ByName("tld")
-	switch tld {
-	case "se":
-		result := domainAmounts(os.Getenv("MYSQL_SEDUMP_DATABASE"), os.Getenv("MYSQL_SEDUMP_USERNAME"), os.Getenv("MYSQL_SEDUMP_PASSWORD"))
-		w.Write(result)
-	case "nu":
-		result := domainAmounts(os.Getenv("MYSQL_NUDUMP_DATABASE"), os.Getenv("MYSQL_NUDUMP_USERNAME"), os.Getenv("MYSQL_NUDUMP_PASSWORD"))
-		w.Write(result)
-	case "ch":
-		result := domainAmounts(os.Getenv("MYSQL_CHDUMP_DATABASE"), os.Getenv("MYSQL_CHDUMP_USERNAME"), os.Getenv("MYSQL_CHDUMP_PASSWORD"))
-		w.Write(result)
-	case "li":
-		result := domainAmounts(os.Getenv("MYSQL_LIDUMP_DATABASE"), os.Getenv("MYSQL_LIDUMP_USERNAME"), os.Getenv("MYSQL_LIDUMP_PASSWORD"))
-		w.Write(result)
-	case "ee":
-		result := domainAmounts(os.Getenv("MYSQL_EEDUMP_DATABASE"), os.Getenv("MYSQL_EEDUMP_USERNAME"), os.Getenv("MYSQL_EEDUMP_PASSWORD"))
-		w.Write(result)
-	case "sk":
-		result := domainAmounts(os.Getenv("MYSQL_SKDUMP_DATABASE"), os.Getenv("MYSQL_SKDUMP_USERNAME"), os.Getenv("MYSQL_SKDUMP_PASSWORD"))
-		w.Write(result)
+func domainStats(w http.ResponseWriter, r *http.Request) {
+	parts, err := getPathParams(r.URL.Path, 2)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
 	}
+
+	tld := parts[1]
+	db, user, pass, err := getTLDEnvVars(tld)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	result := domainAmounts(db, user, pass)
+	w.Write(result)
 }
 
-func readyness(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
+func readyness(w http.ResponseWriter, r *http.Request) {
 	dbs := []models.DbConfig{
 		{Database: os.Getenv("MYSQL_NU_DATABASE"), Username: os.Getenv("MYSQL_NU_USERNAME"), Password: os.Getenv("MYSQL_NU_PASSWORD"), Name: "NU"},
 		{Database: os.Getenv("MYSQL_SE_DATABASE"), Username: os.Getenv("MYSQL_SE_USERNAME"), Password: os.Getenv("MYSQL_SE_PASSWORD"), Name: "SE"},
@@ -267,7 +344,7 @@ func readyness(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 	w.Write([]byte("All database connections successful"))
 }
 
-func liveness(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
+func liveness(w http.ResponseWriter, r *http.Request) {
 	MYSQL_HOSTNAME := os.Getenv("MYSQL_HOSTNAME")
 	timeout := 5 * time.Second
 
@@ -281,4 +358,20 @@ func liveness(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("MySQL server is reachable"))
+}
+
+func getTLDEnvVars(tld string) (string, string, string, error) {
+	config, ok := tldConfigs[tld]
+	if !ok {
+		return "", "", "", fmt.Errorf("unsupported TLD: %s", tld)
+	}
+	return os.Getenv(config.Database), os.Getenv(config.Username), os.Getenv(config.Password), nil
+}
+
+func getPathParams(path string, expectedParts int) ([]string, error) {
+	parts := strings.Split(strings.Trim(path, "/"), "/")
+	if len(parts) != expectedParts {
+		return nil, fmt.Errorf("invalid path: expected %d parts, got %d", expectedParts, len(parts))
+	}
+	return parts, nil
 }
