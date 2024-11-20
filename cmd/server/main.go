@@ -7,6 +7,7 @@ import (
 )
 
 func main() {
+	api.InitRedis()
 	mux := api.SetupRoutes()
 	log.Fatal(http.ListenAndServe(":8080", mux))
 }

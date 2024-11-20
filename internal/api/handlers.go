@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -13,6 +14,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/redis/go-redis/v9"
 )
 
 type TLDConfig struct {
@@ -62,6 +65,56 @@ var tldConfigs = map[string]TLDConfig{
 		Username: "MYSQL_NU_USERNAME",
 		Password: "MYSQL_NU_PASSWORD",
 	},
+}
+
+var (
+	redisClient *redis.Client
+	ctx         = context.Background()
+)
+
+func InitRedis() {
+	if redisURL := os.Getenv("REDIS_URL"); redisURL != "" {
+		redisClient = redis.NewClient(&redis.Options{
+			Addr: redisURL,
+		})
+
+		_, err := redisClient.Ping(ctx).Result()
+		if err != nil {
+			log.Printf("Failed to connect to Redis: %v", err)
+			redisClient = nil
+		} else {
+			log.Printf("Successfully connected to Redis at %s", redisURL)
+		}
+	} else {
+		log.Printf("No REDIS_URL provided, running without cache")
+	}
+}
+
+func getOrSetCache(key string, ttl time.Duration, generator func() []byte) ([]byte, bool, error) {
+	if redisClient == nil {
+		return generator(), false, nil
+	}
+
+	val, err := redisClient.Get(ctx, key).Bytes()
+	if err == nil {
+		log.Printf("Cache HIT for key: %s", key)
+		return val, true, nil
+	}
+	if err != redis.Nil {
+		log.Printf("Redis error for key %s: %v", key, err)
+		return nil, false, err
+	}
+
+	log.Printf("Cache MISS for key: %s", key)
+	data := generator()
+
+	err = redisClient.Set(ctx, key, data, ttl).Err()
+	if err != nil {
+		log.Printf("Failed to set cache for key %s: %v", key, err)
+		return data, false, err
+	}
+
+	return data, false, nil
 }
 
 func dbConn(dbName string, dbUser string, dbPass string) (db *sql.DB, err error) {
@@ -206,6 +259,13 @@ func domainAmounts(dumpdb, dbUser, dbPass string) []byte {
 	return jsonData
 }
 
+const (
+	ShortTTL  = 5 * time.Minute
+	MediumTTL = 1 * time.Hour
+	LongTTL   = 6 * time.Hour
+	DayTTL    = 24 * time.Hour
+)
+
 func sendSEDates(w http.ResponseWriter, r *http.Request) {
 	pathParts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
 	if len(pathParts) != 2 {
@@ -219,7 +279,22 @@ func sendSEDates(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result := sendDates(os.Getenv("MYSQL_SE_DATABASE"), os.Getenv("MYSQL_SE_USERNAME"), os.Getenv("MYSQL_SE_PASSWORD"), page)
+	cacheKey := fmt.Sprintf("sedates:page:%d", page)
+
+	result, cacheHit, err := getOrSetCache(cacheKey, MediumTTL, func() []byte {
+		return sendDates(os.Getenv("MYSQL_SE_DATABASE"), os.Getenv("MYSQL_SE_USERNAME"), os.Getenv("MYSQL_SE_PASSWORD"), page)
+	})
+
+	if err != nil {
+		log.Printf("Cache error: %v", err)
+	}
+
+	if cacheHit {
+		w.Header().Set("X-Cache", "HIT")
+	} else {
+		w.Header().Set("X-Cache", "MISS")
+	}
+
 	w.Write(result)
 }
 
@@ -236,7 +311,22 @@ func sendNUDates(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result := sendDates(os.Getenv("MYSQL_NU_DATABASE"), os.Getenv("MYSQL_NU_USERNAME"), os.Getenv("MYSQL_NU_PASSWORD"), page)
+	cacheKey := fmt.Sprintf("nudates:page:%d", page)
+
+	result, cacheHit, err := getOrSetCache(cacheKey, MediumTTL, func() []byte {
+		return sendDates(os.Getenv("MYSQL_NU_DATABASE"), os.Getenv("MYSQL_NU_USERNAME"), os.Getenv("MYSQL_NU_PASSWORD"), page)
+	})
+
+	if err != nil {
+		log.Printf("Cache error: %v", err)
+	}
+
+	if cacheHit {
+		w.Header().Set("X-Cache", "HIT")
+	} else {
+		w.Header().Set("X-Cache", "MISS")
+	}
+
 	w.Write(result)
 }
 
@@ -259,7 +349,22 @@ func sendSERows(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result := sendRows(os.Getenv("MYSQL_SE_DATABASE"), os.Getenv("MYSQL_SE_USERNAME"), os.Getenv("MYSQL_SE_PASSWORD"), date, page)
+	cacheKey := fmt.Sprintf("serows:date:%d:page:%d", date, page)
+
+	result, cacheHit, err := getOrSetCache(cacheKey, MediumTTL, func() []byte {
+		return sendRows(os.Getenv("MYSQL_SE_DATABASE"), os.Getenv("MYSQL_SE_USERNAME"), os.Getenv("MYSQL_SE_PASSWORD"), date, page)
+	})
+
+	if err != nil {
+		log.Printf("Cache error: %v", err)
+	}
+
+	if cacheHit {
+		w.Header().Set("X-Cache", "HIT")
+	} else {
+		w.Header().Set("X-Cache", "MISS")
+	}
+
 	w.Write(result)
 }
 
@@ -282,7 +387,22 @@ func sendNURows(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result := sendRows(os.Getenv("MYSQL_NU_DATABASE"), os.Getenv("MYSQL_NU_USERNAME"), os.Getenv("MYSQL_NU_PASSWORD"), date, page)
+	cacheKey := fmt.Sprintf("nurows:date:%d:page:%d", date, page)
+
+	result, cacheHit, err := getOrSetCache(cacheKey, MediumTTL, func() []byte {
+		return sendRows(os.Getenv("MYSQL_NU_DATABASE"), os.Getenv("MYSQL_NU_USERNAME"), os.Getenv("MYSQL_NU_PASSWORD"), date, page)
+	})
+
+	if err != nil {
+		log.Printf("Cache error: %v", err)
+	}
+
+	if cacheHit {
+		w.Header().Set("X-Cache", "HIT")
+	} else {
+		w.Header().Set("X-Cache", "MISS")
+	}
+
 	w.Write(result)
 }
 
@@ -300,7 +420,22 @@ func domainSearch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result := searchDomain(db, user, pass, query)
+	cacheKey := fmt.Sprintf("search:%s:%s", tld, query)
+
+	result, cacheHit, err := getOrSetCache(cacheKey, ShortTTL, func() []byte {
+		return searchDomain(db, user, pass, query)
+	})
+
+	if err != nil {
+		log.Printf("Cache error: %v", err)
+	}
+
+	if cacheHit {
+		w.Header().Set("X-Cache", "HIT")
+	} else {
+		w.Header().Set("X-Cache", "MISS")
+	}
+
 	w.Write(result)
 }
 
@@ -318,7 +453,22 @@ func domainStats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result := domainAmounts(db, user, pass)
+	cacheKey := fmt.Sprintf("stats:%s", tld)
+
+	result, cacheHit, err := getOrSetCache(cacheKey, LongTTL, func() []byte {
+		return domainAmounts(db, user, pass)
+	})
+
+	if err != nil {
+		log.Printf("Cache error: %v", err)
+	}
+
+	if cacheHit {
+		w.Header().Set("X-Cache", "HIT")
+	} else {
+		w.Header().Set("X-Cache", "MISS")
+	}
+
 	w.Write(result)
 }
 
