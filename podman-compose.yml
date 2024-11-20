@@ -1,0 +1,54 @@
+version: '3.8'
+
+services:
+
+  redis:
+    image: redis:alpine
+    ports:
+      - "6379:6379"
+    command: redis-server --loglevel warning
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      no_cache: true
+
+    environment:
+      # REDIS_URL: redis:6379
+      # MYSQL_HOSTNAME: host.containers.internal
+      # MYSQL_SE_DATABASE: ****
+      # MYSQL_SE_USERNAME: ****
+      # MYSQL_SE_PASSWORD: ****
+      # MYSQL_NU_DATABASE: ****
+      # MYSQL_NU_USERNAME: ****
+      # MYSQL_NU_PASSWORD: ****
+      # MYSQL_SEDUMP_DATABASE: ****
+      # MYSQL_SEDUMP_USERNAME: ****
+      # MYSQL_SEDUMP_PASSWORD: ****
+      # MYSQL_NUDUMP_DATABASE: ****
+      # MYSQL_NUDUMP_USERNAME: ****
+      # MYSQL_NUDUMP_PASSWORD: ****
+      # MYSQL_CHDUMP_DATABASE: ****
+      # MYSQL_CHDUMP_USERNAME: ****
+      # MYSQL_CHDUMP_PASSWORD: ****
+      # MYSQL_LIDUMP_DATABASE: ****
+      # MYSQL_LIDUMP_USERNAME: ****
+      # MYSQL_LIDUMP_PASSWORD: ****
+      # MYSQL_EEDUMP_DATABASE: ****
+      # MYSQL_EEDUMP_USERNAME: ****
+      # MYSQL_EEDUMP_PASSWORD: ****
+      # MYSQL_SKDUMP_DATABASE: ****
+      # MYSQL_SKDUMP_USERNAME: ****
+      # MYSQL_SKDUMP_PASSWORD: ****
+    ports:
+      - "8080:8080"
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: on-failure 
