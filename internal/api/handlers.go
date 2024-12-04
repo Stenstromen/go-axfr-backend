@@ -124,6 +124,11 @@ func dbConn(dbName string, dbUser string, dbPass string) (db *sql.DB, err error)
 	if err != nil {
 		return nil, err
 	}
+
+	db.SetMaxOpenConns(100)
+	db.SetMaxIdleConns(50)
+	db.SetConnMaxLifetime(time.Hour)
+
 	err = db.Ping()
 	if err != nil {
 		return nil, err
@@ -132,11 +137,18 @@ func dbConn(dbName string, dbUser string, dbPass string) (db *sql.DB, err error)
 }
 
 func sendRows(diffdb string, dbUser string, dbPass string, date int, page int) []byte {
-	db, _ := dbConn(diffdb, dbUser, dbPass)
-	var rows2 = page * 20
-	rows, err := db.Query("SELECT domain FROM domains JOIN dates ON domains.dategrp = dates.id WHERE date = ? ORDER BY domain ASC OFFSET ? ROWS FETCH FIRST 20 ROWS ONLY", date, rows2)
+	db, err := dbConn(diffdb, dbUser, dbPass)
 	if err != nil {
-		panic(err.Error())
+		log.Printf("Database connection error: %v", err)
+		return []byte(`{"error": "database connection failed"}`)
+	}
+	defer db.Close()
+
+	var rows2 = page * 20
+	rows, err := db.Query("SELECT domain FROM domains JOIN dates ON domains.dategrp = dates.id WHERE date = ? ORDER BY domain ASC LIMIT 20 OFFSET ?", date, rows2)
+	if err != nil {
+		log.Printf("Query error: %v", err)
+		return []byte(`{"error": "query failed"}`)
 	}
 	defer rows.Close()
 
@@ -146,11 +158,21 @@ func sendRows(diffdb string, dbUser string, dbPass string, date int, page int) [
 	var arr []Rows
 	for rows.Next() {
 		var domain string
-		rows.Scan(&domain)
-		a := Rows{Domain: domain}
-		arr = append(arr, a)
+		if err := rows.Scan(&domain); err != nil {
+			log.Printf("Row scan error: %v", err)
+			continue
+		}
+		arr = append(arr, Rows{Domain: domain})
 	}
-	j, _ := json.Marshal(arr)
+	if err := rows.Err(); err != nil {
+		log.Printf("Rows error: %v", err)
+	}
+
+	j, err := json.Marshal(arr)
+	if err != nil {
+		log.Printf("JSON marshal error: %v", err)
+		return []byte(`{"error": "json marshal failed"}`)
+	}
 	return j
 }
 
