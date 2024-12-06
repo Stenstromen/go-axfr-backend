@@ -18,6 +18,11 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
+/* Optimize queries for se-nu appearance
+CREATE INDEX domain_idx ON domains(domain);
+CREATE INDEX dategrp_idx ON domains(dategrp);
+CREATE INDEX date_idx ON dates(date); */
+
 type TLDConfig struct {
 	Database string
 	Username string
@@ -546,4 +551,140 @@ func getPathParams(path string, expectedParts int) ([]string, error) {
 		return nil, fmt.Errorf("invalid path: expected %d parts, got %d", expectedParts, len(parts))
 	}
 	return parts, nil
+}
+
+func getDomainFirstAppearance(dumpdb, dbUser, dbPass, query string) []byte {
+	start := time.Now()
+	defer func() {
+		duration := time.Since(start)
+		if duration > time.Second {
+			log.Printf("Slow query warning: getDomainFirstAppearance took %v for query: %s", duration, query)
+		}
+	}()
+
+	db, err := dbConn(dumpdb, dbUser, dbPass)
+	if err != nil {
+		log.Printf("Database connection error: %v", err)
+		return []byte(`{"error": "database connection failed"}`)
+	}
+	defer db.Close()
+
+	var earliestDate sql.NullString
+	var queryStmt string
+	var queryArgs []interface{}
+
+	if strings.Contains(query, "%") {
+		queryStmt = `
+			SELECT MIN(dt.date) AS earliest_date 
+			FROM domains d FORCE INDEX (domain_idx)
+			JOIN dates dt ON d.dategrp = dt.id 
+			WHERE d.domain LIKE ?`
+		queryArgs = []interface{}{"%" + query + "%"}
+	} else {
+		queryStmt = `
+			SELECT MIN(dt.date) AS earliest_date 
+			FROM domains d FORCE INDEX (domain_idx)
+			JOIN dates dt ON d.dategrp = dt.id 
+			WHERE d.domain = ?`
+		queryArgs = []interface{}{query}
+	}
+
+	err = db.QueryRow(queryStmt, queryArgs...).Scan(&earliestDate)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return []byte(`{"earliest_date": null}`)
+		}
+		log.Printf("Query error: %v", err)
+		return []byte(`{"error": "query failed"}`)
+	}
+
+	if !earliestDate.Valid {
+		return []byte(`{"earliest_date": null}`)
+	}
+
+	parsedDate, err := time.Parse("20060102", earliestDate.String)
+	if err != nil {
+		log.Printf("Date parsing error: %v", err)
+		return []byte(`{"error": "date parsing failed"}`)
+	}
+	formattedDate := parsedDate.Format("2006-01-02")
+
+	result := struct {
+		EarliestDate string `json:"earliest_date"`
+	}{
+		EarliestDate: formattedDate,
+	}
+
+	j, err := json.Marshal(result)
+	if err != nil {
+		log.Printf("JSON marshal error: %v", err)
+		return []byte(`{"error": "json marshal failed"}`)
+	}
+	return j
+}
+
+func seDomainFirstAppearance(w http.ResponseWriter, r *http.Request) {
+	parts, err := getPathParams(r.URL.Path, 2)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	query := parts[1]
+	db, user, pass, err := getTLDEnvVars("se_diff")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	cacheKey := fmt.Sprintf("seappearance:%s", query)
+
+	result, cacheHit, err := getOrSetCache(cacheKey, MediumTTL, func() []byte {
+		return getDomainFirstAppearance(db, user, pass, query)
+	})
+
+	if err != nil {
+		log.Printf("Cache error: %v", err)
+	}
+
+	if cacheHit {
+		w.Header().Set("X-Cache", "HIT")
+	} else {
+		w.Header().Set("X-Cache", "MISS")
+	}
+
+	w.Write(result)
+}
+
+func nuDomainFirstAppearance(w http.ResponseWriter, r *http.Request) {
+	parts, err := getPathParams(r.URL.Path, 2)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	query := parts[1]
+	db, user, pass, err := getTLDEnvVars("nu_diff")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	cacheKey := fmt.Sprintf("nuappearance:%s", query)
+
+	result, cacheHit, err := getOrSetCache(cacheKey, MediumTTL, func() []byte {
+		return getDomainFirstAppearance(db, user, pass, query)
+	})
+
+	if err != nil {
+		log.Printf("Cache error: %v", err)
+	}
+
+	if cacheHit {
+		w.Header().Set("X-Cache", "HIT")
+	} else {
+		w.Header().Set("X-Cache", "MISS")
+	}
+
+	w.Write(result)
 }
