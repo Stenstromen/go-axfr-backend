@@ -21,6 +21,8 @@ func SetupRoutes() *http.ServeMux {
 	mux.HandleFunc("/nudomains/", Middleware(sendNURows))
 	mux.HandleFunc("/search/", Middleware(domainSearch))
 	mux.HandleFunc("/stats/", Middleware(domainStats))
+	mux.HandleFunc("/seappearance/", Middleware(seDomainFirstAppearance))
+	mux.HandleFunc("/nuappearance/", Middleware(nuDomainFirstAppearance))
 
 	return mux
 }
