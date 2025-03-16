@@ -5,6 +5,7 @@ APP_CONTAINER="test-axfr"
 APP_IP="localhost"
 DB_CONTAINER="test-mariadb"
 DB_PASSWORD="testpass123"
+REDIS_CONTAINER="test-redis"
 
 # Wait for the application to be ready
 echo "ℹ️ Waiting for application to be ready..."
@@ -53,6 +54,28 @@ test_endpoint() {
         echo "Actual:"
         cat "$actual_file"
         rm "$actual_file"
+        return 1
+    fi
+}
+
+# Function to test for cache hits
+test_cache_hit() {
+    local endpoint=$1
+    local description=$2
+    
+    echo "🧪 Testing cache for $description..."
+    
+    # First request to populate cache
+    curl -s "http://$APP_IP:8080$endpoint" > /dev/null
+    
+    # Second request should hit cache
+    local cache_header=$(curl -s -I "http://$APP_IP:8080$endpoint" | grep -i "X-Cache" | tr -d '\r')
+    
+    if [[ "$cache_header" == *"HIT"* ]]; then
+        echo "✅ Cache test passed: $description (${cache_header})"
+        return 0
+    else
+        echo "❌ Cache test failed: $description - Expected X-Cache: HIT, got: ${cache_header:-none}"
         return 1
     fi
 }
@@ -182,6 +205,14 @@ test_endpoint "/nudomains/20250314/1" "test_data/nudomains.json" "NU domains lis
 test_endpoint "/search/nu/010" "test_data/search.json" "Search NU domains with '010'" || failed_tests=$((failed_tests + 1))
 test_endpoint "/stats/nu" "test_data/stats.json" "NU domains statistics" || failed_tests=$((failed_tests + 1))
 test_endpoint "/nuappearance/digitalisering.nu" "test_data/appearance.json" "First appearance of digitalisering.nu" || failed_tests=$((failed_tests + 1))
+
+# Run cache tests
+echo "ℹ️ Running cache tests..."
+test_cache_hit "/nu/0" "NU domains count" || failed_tests=$((failed_tests + 1))
+test_cache_hit "/nudomains/20250314/1" "NU domains list for date 20250314 page 1" || failed_tests=$((failed_tests + 1))
+test_cache_hit "/search/nu/010" "Search NU domains with '010'" || failed_tests=$((failed_tests + 1))
+test_cache_hit "/stats/nu" "NU domains statistics" || failed_tests=$((failed_tests + 1))
+test_cache_hit "/nuappearance/digitalisering.nu" "First appearance of digitalisering.nu" || failed_tests=$((failed_tests + 1))
 
 # Report test results
 if [ $failed_tests -eq 0 ]; then

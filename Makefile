@@ -3,6 +3,7 @@
 NETWORK_NAME = testnetwork
 DB_CONTAINER = test-mariadb
 APP_CONTAINER = test-axfr
+REDIS_CONTAINER = test-redis
 DB_PASSWORD = testpass123
 
 
@@ -21,6 +22,11 @@ test: test-deps
 		--network $(NETWORK_NAME) \
 		-e MYSQL_ROOT_PASSWORD=$(DB_PASSWORD) \
 		docker.io/library/mariadb:latest
+
+	@echo "ℹ️ Starting Redis container..."
+	podman run -d --name $(REDIS_CONTAINER) \
+		--network $(NETWORK_NAME) \
+		docker.io/library/redis:latest
 
 	@echo "ℹ️ Building application container..."
 	podman build -t $(APP_CONTAINER) .
@@ -55,6 +61,7 @@ test: test-deps
 		-e MYSQL_NU_DATABASE=nudiff \
 		-e MYSQL_NU_USERNAME=root \
 		-e MYSQL_NU_PASSWORD=$(DB_PASSWORD) \
+		-e REDIS_URL=$(REDIS_CONTAINER):6379 \
 		$(APP_CONTAINER)
 
 	@echo "✅ Test environment is ready!"
@@ -64,8 +71,8 @@ test: test-deps
 
 clean:
 	@echo "ℹ️ Cleaning up containers and volumes..."
-	podman stop $(APP_CONTAINER) $(DB_CONTAINER) || true
-	podman rm -v $(APP_CONTAINER) $(DB_CONTAINER) || true
+	podman stop $(APP_CONTAINER) $(DB_CONTAINER) $(REDIS_CONTAINER) || true
+	podman rm -v $(APP_CONTAINER) $(DB_CONTAINER) $(REDIS_CONTAINER) || true
 	podman network rm $(NETWORK_NAME) || true
 
 compose-up: check-podman
