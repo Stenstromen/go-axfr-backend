@@ -2,7 +2,7 @@ module go-axfr-backend
 
 go 1.24.0
 
-require github.com/go-sql-driver/mysql v1.9.1
+require github.com/go-sql-driver/mysql v1.9.2
 
 require (
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
