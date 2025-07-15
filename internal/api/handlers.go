@@ -8,7 +8,6 @@ import (
 	"go-axfr-backend/internal/models"
 	"go-axfr-backend/pkg/health"
 	"log"
-	"net"
 	"net/http"
 	"os"
 	"strconv"
@@ -523,18 +522,37 @@ func readyness(w http.ResponseWriter, r *http.Request) {
 
 func liveness(w http.ResponseWriter, r *http.Request) {
 	MYSQL_HOSTNAME := os.Getenv("MYSQL_HOSTNAME")
-	timeout := 5 * time.Second
+	dbDriver := "mysql"
+	dbUser := os.Getenv("MYSQL_SE_USERNAME")
+	dbPass := os.Getenv("MYSQL_SE_PASSWORD")
+	dbName := os.Getenv("MYSQL_SE_DATABASE")
 
-	conn, err := net.DialTimeout("tcp", MYSQL_HOSTNAME+":3306", timeout)
-	if err != nil {
+	if dbUser == "" || dbPass == "" || dbName == "" {
 		w.WriteHeader(http.StatusServiceUnavailable)
-		w.Write([]byte("MySQL server is not reachable"))
+		w.Write([]byte("MySQL configuration not available"))
 		return
 	}
-	defer conn.Close()
+
+	db, err := sql.Open(dbDriver, dbUser+":"+dbPass+"@tcp"+"("+MYSQL_HOSTNAME+")"+"/"+dbName)
+	if err != nil {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		w.Write([]byte("MySQL server connection failed"))
+		return
+	}
+	defer db.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	err = db.PingContext(ctx)
+	if err != nil {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		w.Write([]byte("MySQL server is not responding"))
+		return
+	}
 
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("MySQL server is reachable"))
+	w.Write([]byte("MySQL server is healthy"))
 }
 
 func getTLDEnvVars(tld string) (string, string, string, error) {
