@@ -1,15 +1,3 @@
-# ---
-# repos:
-#   - repo: https://github.com/dnephin/pre-commit-golang
-#     rev: v0.5.1
-#     hooks:
-#       - id: go-build
-#         files: '\.go$'
-#       - id: go-mod-tidy
-#         files: '\.go$'
-#       - id: go-vet
-#         files: '\.go$'
-# 
 ---
 repos:
   - repo: local
@@ -20,7 +8,6 @@ repos:
         language: system
         types: [go]
         pass_filenames: false
-        verbose: true
       - id: go-mod-tidy
         name: Go Mod Tidy
         entry: go mod tidy
