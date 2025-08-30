@@ -1,8 +1,8 @@
-FROM golang:1.24-alpine AS build
+FROM golang:1.25-alpine AS build
 WORKDIR /app
 COPY . .
 RUN go mod download
-RUN CGO_ENABLED=0 GOOS=linux go build -a -ldflags='-w -s -extldflags "-static"' -o /go-axfr-backend ./cmd/server
+RUN GOEXPERIMENT=greenteagc CGO_ENABLED=0 GOOS=linux go build -a -ldflags='-w -s -extldflags "-static"' -o /go-axfr-backend ./cmd/server
 
 FROM scratch
 COPY --from=build /go-axfr-backend /

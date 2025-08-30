@@ -124,7 +124,18 @@ func getOrSetCache(key string, ttl time.Duration, generator func() []byte) ([]by
 func dbConn(dbName string, dbUser string, dbPass string) (db *sql.DB, err error) {
 	dbDriver := "mysql"
 	MYSQL_HOSTNAME := os.Getenv("MYSQL_HOSTNAME")
-	db, err = sql.Open(dbDriver, dbUser+":"+dbPass+"@tcp"+"("+MYSQL_HOSTNAME+")"+"/"+dbName)
+
+	// More efficient DSN building using strings.Builder
+	var dsn strings.Builder
+	dsn.WriteString(dbUser)
+	dsn.WriteByte(':')
+	dsn.WriteString(dbPass)
+	dsn.WriteString("@tcp(")
+	dsn.WriteString(MYSQL_HOSTNAME)
+	dsn.WriteString(")/")
+	dsn.WriteString(dbName)
+
+	db, err = sql.Open(dbDriver, dsn.String())
 	if err != nil {
 		return nil, err
 	}
@@ -181,18 +192,18 @@ func sendRows(diffdb string, dbUser string, dbPass string, date int, page int) [
 }
 
 func sendDates(diffdb string, dbUser string, dbPass string, pageordate int) []byte {
-	db, _ := dbConn(diffdb, dbUser, dbPass)
-
-	var rows1 = pageordate * 20
-	var rows2 int
-	if pageordate == 0 {
-		rows2 = 0
-	} else {
-		rows2 = rows1
+	db, err := dbConn(diffdb, dbUser, dbPass)
+	if err != nil {
+		log.Printf("Database connection error: %v", err)
+		return []byte(`{"error": "database connection failed"}`)
 	}
+	defer db.Close()
+
+	var rows2 = pageordate * 20
 	rows, err := db.Query("SELECT date, amount FROM dates ORDER BY date DESC OFFSET ? ROWS FETCH FIRST 20 ROWS ONLY", rows2)
 	if err != nil {
-		panic(err.Error())
+		log.Printf("Query error: %v", err)
+		return []byte(`{"error": "query failed"}`)
 	}
 	defer rows.Close()
 
@@ -200,15 +211,28 @@ func sendDates(diffdb string, dbUser string, dbPass string, pageordate int) []by
 		Date   int `json:"date"`
 		Amount int `json:"amount"`
 	}
-	var arr []Amounts
+	// Pre-allocate slice for better performance
+	arr := make([]Amounts, 0, 20)
 	for rows.Next() {
 		var date int
 		var amount int
-		rows.Scan(&date, &amount)
-		a := Amounts{Date: date, Amount: amount}
-		arr = append(arr, a)
+		if err := rows.Scan(&date, &amount); err != nil {
+			log.Printf("Row scan error: %v", err)
+			continue
+		}
+		arr = append(arr, Amounts{Date: date, Amount: amount})
 	}
-	j, _ := json.Marshal(arr)
+
+	if err := rows.Err(); err != nil {
+		log.Printf("Rows error: %v", err)
+		return []byte(`{"error": "rows iteration failed"}`)
+	}
+
+	j, err := json.Marshal(arr)
+	if err != nil {
+		log.Printf("JSON marshal error: %v", err)
+		return []byte(`{"error": "json marshal failed"}`)
+	}
 	return j
 }
 
@@ -247,39 +271,49 @@ func domainAmounts(dumpdb, dbUser, dbPass string) []byte {
 		Amount int    `json:"amount"`
 	}
 
-	db, _ := dbConn(dumpdb, dbUser, dbPass)
+	db, err := dbConn(dumpdb, dbUser, dbPass)
+	if err != nil {
+		log.Printf("Database connection error: %v", err)
+		return []byte(`{"error": "database connection failed"}`)
+	}
 	defer db.Close()
 
 	rows, err := db.Query("SELECT date, amount FROM dates")
 	if err != nil {
-		log.Panic(err.Error())
+		log.Printf("Query error: %v", err)
+		return []byte(`{"error": "query failed"}`)
 	}
 	defer rows.Close()
 
-	var results []DateAmount
+	// Pre-allocate slice with estimated capacity
+	results := make([]DateAmount, 0, 100)
 
 	for rows.Next() {
 		var da DateAmount
 		err := rows.Scan(&da.Date, &da.Amount)
 		if err != nil {
-			log.Panic(err.Error())
+			log.Printf("Row scan error: %v", err)
+			continue
 		}
 
 		parsedDate, err := time.Parse("20060102", da.Date)
 		if err != nil {
-			log.Panic(err.Error())
+			log.Printf("Date parsing error: %v", err)
+			continue
 		}
 		da.Date = parsedDate.Format("2006-01-02")
 		results = append(results, da)
 	}
 
 	if err = rows.Err(); err != nil {
-		log.Panic(err.Error())
+		log.Printf("Rows error: %v", err)
+		return []byte(`{"error": "rows iteration failed"}`)
 	}
 
 	jsonData, err := json.Marshal(results)
 	if err != nil {
-		log.Panic(err.Error())
+		log.Printf("JSON marshal error: %v", err)
+		return []byte(`{"error": "json marshal failed"}`)
 	}
 
 	return jsonData
@@ -305,7 +339,8 @@ func sendSEDates(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cacheKey := fmt.Sprintf("sedates:page:%d", page)
+	// More efficient cache key generation
+	cacheKey := "sedates:page:" + strconv.Itoa(page)
 
 	result, cacheHit, err := getOrSetCache(cacheKey, MediumTTL, func() []byte {
 		return sendDates(os.Getenv("MYSQL_SE_DATABASE"), os.Getenv("MYSQL_SE_USERNAME"), os.Getenv("MYSQL_SE_PASSWORD"), page)
@@ -337,7 +372,8 @@ func sendNUDates(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cacheKey := fmt.Sprintf("nudates:page:%d", page)
+	// More efficient cache key generation
+	cacheKey := "nudates:page:" + strconv.Itoa(page)
 
 	result, cacheHit, err := getOrSetCache(cacheKey, MediumTTL, func() []byte {
 		return sendDates(os.Getenv("MYSQL_NU_DATABASE"), os.Getenv("MYSQL_NU_USERNAME"), os.Getenv("MYSQL_NU_PASSWORD"), page)
@@ -375,7 +411,13 @@ func sendSERows(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cacheKey := fmt.Sprintf("serows:date:%d:page:%d", date, page)
+	// More efficient cache key generation using strings.Builder
+	var keyBuilder strings.Builder
+	keyBuilder.WriteString("serows:date:")
+	keyBuilder.WriteString(strconv.Itoa(date))
+	keyBuilder.WriteString(":page:")
+	keyBuilder.WriteString(strconv.Itoa(page))
+	cacheKey := keyBuilder.String()
 
 	result, cacheHit, err := getOrSetCache(cacheKey, MediumTTL, func() []byte {
 		return sendRows(os.Getenv("MYSQL_SE_DATABASE"), os.Getenv("MYSQL_SE_USERNAME"), os.Getenv("MYSQL_SE_PASSWORD"), date, page)
@@ -413,7 +455,13 @@ func sendNURows(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cacheKey := fmt.Sprintf("nurows:date:%d:page:%d", date, page)
+	// More efficient cache key generation using strings.Builder
+	var keyBuilder strings.Builder
+	keyBuilder.WriteString("nurows:date:")
+	keyBuilder.WriteString(strconv.Itoa(date))
+	keyBuilder.WriteString(":page:")
+	keyBuilder.WriteString(strconv.Itoa(page))
+	cacheKey := keyBuilder.String()
 
 	result, cacheHit, err := getOrSetCache(cacheKey, MediumTTL, func() []byte {
 		return sendRows(os.Getenv("MYSQL_NU_DATABASE"), os.Getenv("MYSQL_NU_USERNAME"), os.Getenv("MYSQL_NU_PASSWORD"), date, page)

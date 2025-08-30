@@ -1,9 +1,35 @@
+# ---
+# repos:
+#   - repo: https://github.com/dnephin/pre-commit-golang
+#     rev: v0.5.1
+#     hooks:
+#       - id: go-build
+#         files: '\.go$'
+#       - id: go-mod-tidy
+#         files: '\.go$'
+#       - id: go-vet
+#         files: '\.go$'
+# 
 ---
 repos:
-  - repo: https://github.com/dnephin/pre-commit-golang
-    rev: v0.5.1
+  - repo: local
     hooks:
       - id: go-build
-        files: '\.go$'
+        name: Go Build
+        entry: bash -c 'GOEXPERIMENT=greenteagc CGO_ENABLED=0 GOOS=linux go build -a -ldflags="-w -s -extldflags \"-static\"" -o /tmp/go-axfr-backend ./cmd/server'
+        language: system
+        types: [go]
+        pass_filenames: false
+        verbose: true
       - id: go-mod-tidy
-        files: '\.go$'
+        name: Go Mod Tidy
+        entry: go mod tidy
+        language: system
+        types: [go]
+        pass_filenames: false
+      - id: go-vet
+        name: Go Vet
+        entry: go vet ./...
+        language: system
+        types: [go]
+        pass_filenames: false
