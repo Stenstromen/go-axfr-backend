@@ -1,0 +1,85 @@
+---
+name: Integration Test
+
+on:
+  workflow_dispatch:
+
+jobs:
+  integration-test:
+    runs-on: ubuntu-latest
+    services:
+      mariadb:
+        image: mariadb:latest
+        ports:
+          - 3306:3306
+        env:
+          MYSQL_ROOT_PASSWORD: testpass123
+          MYSQL_DATABASE: test
+          MYSQL_USER: test
+          MYSQL_PASSWORD: testpass123
+      redis:
+        image: redis:latest
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 10s --health-timeout 5s --health-retries 5
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install MySQL client
+        run: |
+          DEBIAN_FRONTEND=noninteractive apt-get update -qq
+          DEBIAN_FRONTEND=noninteractive apt-get install -y -qq mysql-client
+
+      - name: Create MySQL config
+        run: |
+          mkdir -p ~/.mysql
+          cat > ~/.mysql/my.cnf << EOF
+          [client]
+          host=127.0.0.1
+          port=3306
+          user=root
+          password=testpass123
+          EOF
+          chmod 600 ~/.mysql/my.cnf
+
+      - name: Wait for MariaDB
+        run: |
+          timeout 60 bash -c 'until mysqladmin --defaults-extra-file=~/.mysql/my.cnf ping --silent; do sleep 2; done'
+          echo "MariaDB is ready"
+
+      - name: Create databases
+        run: |
+          mysql --defaults-extra-file=~/.mysql/my.cnf test -e "CREATE DATABASE IF NOT EXISTS nudump;"
+          mysql --defaults-extra-file=~/.mysql/my.cnf test -e "CREATE DATABASE IF NOT EXISTS nudiff;"
+
+      - name: Import database migrations
+        run: |
+          mysql --defaults-extra-file=~/.mysql/my.cnf nudump < migrations/nudump.sql
+          mysql --defaults-extra-file=~/.mysql/my.cnf nudiff < migrations/nudiff.sql
+
+      - name: Build Docker image
+        run: docker build --load -t goaxfrbackend .
+
+      - name: Run Docker container
+        run: |
+          docker run -d \
+            --name goaxfrbackend \
+            --network host \
+            -e MYSQL_HOSTNAME=localhost \
+            -e MYSQL_NUDUMP_DATABASE=nudump \
+            -e MYSQL_NUDUMP_USERNAME=root \
+            -e MYSQL_NUDUMP_PASSWORD=testpass123 \
+            -e MYSQL_NU_DATABASE=nudiff \
+            -e MYSQL_NU_USERNAME=root \
+            -e MYSQL_NU_PASSWORD=testpass123 \
+            -e REDIS_URL=localhost:6379 \
+            goaxfrbackend
+
+      - name: Wait for container to be ready
+        run: |
+          timeout 60 bash -c 'until curl -s http://localhost:8080/ready > /dev/null 2>&1; do sleep 2; done'
+          echo "Container is ready"
+
+      - name: Run integration tests
+        run: ./integration_test.sh
