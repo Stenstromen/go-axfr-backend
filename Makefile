@@ -1,4 +1,4 @@
-.PHONY: check-podman compose-up compose-down
+.PHONY: check-podman compose-up compose-down seccomp-profile
 
 NETWORK_NAME = testnetwork
 DB_CONTAINER = test-mariadb
@@ -81,3 +81,8 @@ compose-up: check-podman
 
 compose-down: check-podman
 	podman-compose down
+
+seccomp-profile: test-deps
+	@echo "ℹ️ Generating seccomp profile by tracing syscalls during integration test..."
+	@chmod +x generate-seccomp-profile.sh
+	@./generate-seccomp-profile.sh
