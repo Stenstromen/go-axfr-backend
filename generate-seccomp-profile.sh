@@ -254,17 +254,6 @@ echo "ℹ️ Found $SYSCALL_COUNT unique syscalls (before validation)"
 #     seccompProfile:
 #       type: Localhost
 #       localhostProfile: seccomp-profile.json
-cat > "$SECCOMP_PROFILE" << 'PROFILE_EOF'
-{
-  "defaultAction": "SCMP_ACT_ERRNO",
-  "architectures": [
-    "SCMP_ARCH_X86_64",
-    "SCMP_ARCH_X86",
-    "SCMP_ARCH_X32"
-  ],
-  "syscalls": [
-PROFILE_EOF
-
 # Add essential syscalls that might not be captured but are needed
 # These are split properly (one per line)
 ESSENTIAL_SYSCALLS=$(cat << 'EOF'
@@ -300,7 +289,21 @@ if [ "$FILTERED_COUNT" -gt 0 ]; then
     echo "ℹ️ Filtered out $FILTERED_COUNT invalid syscall entries"
 fi
 
-# Add each validated syscall to the profile
+# Generate seccomp profile JSON with all syscalls in a single names array
+cat > "$SECCOMP_PROFILE" << 'PROFILE_EOF'
+{
+  "defaultAction": "SCMP_ACT_ERRNO",
+  "architectures": [
+    "SCMP_ARCH_X86_64",
+    "SCMP_ARCH_X86",
+    "SCMP_ARCH_X32"
+  ],
+  "syscalls": [
+    {
+      "names": [
+PROFILE_EOF
+
+# Add all validated syscalls to the names array
 FIRST=true
 while IFS= read -r syscall; do
     if [ -n "$syscall" ] && [ "$syscall" != "" ]; then
@@ -309,16 +312,14 @@ while IFS= read -r syscall; do
         else
             echo "," >> "$SECCOMP_PROFILE"
         fi
-        cat >> "$SECCOMP_PROFILE" << EOF
-    {
-      "names": ["$syscall"],
-      "action": "SCMP_ACT_ALLOW"
-    }
-EOF
+        echo "        \"$syscall\"" >> "$SECCOMP_PROFILE"
     fi
 done <<< "$ALL_SYSCALLS"
 
 cat >> "$SECCOMP_PROFILE" << 'PROFILE_EOF'
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    }
   ]
 }
 PROFILE_EOF
