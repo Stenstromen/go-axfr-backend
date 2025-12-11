@@ -83,3 +83,51 @@ jobs:
 
       - name: Run integration tests
         run: ./integration_test.sh
+
+      - name: Stop and remove container for seccomp test
+        run: |
+          docker stop goaxfrbackend || true
+          docker rm goaxfrbackend || true
+
+      - name: Verify seccomp profile exists
+        run: |
+          if [ ! -f seccomp-profile.json ]; then
+            echo "❌ seccomp-profile.json not found!"
+            exit 1
+          fi
+          echo "✅ seccomp-profile.json found"
+          # Validate JSON syntax
+          python3 -m json.tool seccomp-profile.json > /dev/null || (echo "❌ Invalid JSON in seccomp-profile.json" && exit 1)
+          echo "✅ seccomp-profile.json is valid JSON"
+
+      - name: Run Docker container with seccomp profile
+        run: |
+          SECCOMP_PROFILE="$(pwd)/seccomp-profile.json"
+          echo "Using seccomp profile: $SECCOMP_PROFILE"
+          docker run -d \
+            --name goaxfrbackend-seccomp \
+            --network host \
+            --security-opt seccomp=$SECCOMP_PROFILE \
+            -e MYSQL_HOSTNAME=localhost \
+            -e MYSQL_NUDUMP_DATABASE=nudump \
+            -e MYSQL_NUDUMP_USERNAME=root \
+            -e MYSQL_NUDUMP_PASSWORD=testpass123 \
+            -e MYSQL_NU_DATABASE=nudiff \
+            -e MYSQL_NU_USERNAME=root \
+            -e MYSQL_NU_PASSWORD=testpass123 \
+            -e REDIS_URL=localhost:6379 \
+            goaxfrbackend
+
+      - name: Wait for seccomp container to be ready
+        run: |
+          timeout 60 bash -c 'until curl -s http://localhost:8080/ready > /dev/null 2>&1; do sleep 2; done'
+          echo "Seccomp container is ready"
+
+      - name: Run integration tests with seccomp profile
+        run: ./integration_test.sh
+
+      - name: Cleanup seccomp container
+        if: always()
+        run: |
+          docker stop goaxfrbackend-seccomp || true
+          docker rm goaxfrbackend-seccomp || true
