@@ -7,8 +7,6 @@
         "accept4",
         "arch_prctl",
         "bind",
-        "capget",
-        "capset",
         "clock_gettime",
         "clone",
         "close",
@@ -69,7 +67,7 @@
         "tgkill",
         "uname",
         "write"
-      ],
+    ],
       "action": "SCMP_ACT_ALLOW"
     }
   ]
